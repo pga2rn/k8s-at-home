@@ -1,0 +1,128 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: "2021-07-26T00:18:20Z"
+  labels:
+    app: unifi-controller
+  name: unifi-controller
+  namespace: security-t-pga
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: unifi-controller
+  template:
+    metadata:
+      labels:
+        app: unifi-controller
+    spec:
+      containers:
+      - name: unifi-controller
+        image: linuxserver/unifi-controller:version-6.2.26
+        env:
+        - name: PUID
+          value: "50000"
+        - name: PGID
+          value: "50000"
+        ports:
+        - name: "unifi-http"
+          containerPort: 80
+          protocol: TCP
+        - name: "unifi-https"
+          containerPort: 8443
+          protocol: TCP
+        - name: "unifi-stun"
+          containerPort: 3478
+          protocol: UDP
+        - name: "unifi-rsyslog"
+          containerPort: 5514
+          protocol: UDP
+        - name: "unifi-dev-com"
+          containerPort: 8080
+          protocol: TCP
+        - name: "unifi-http-rdr"
+          containerPort: 8880
+          protocol: TCP
+        - name: "unifi-https-rdr"
+          containerPort: 8843
+          protocol: TCP
+        - name: "unifi-mobsptest"
+          containerPort: 6789
+          protocol: TCP
+        - name: "unifi-l2disc"
+          containerPort: 1900
+          protocol: UDP
+        - name: "unifi-l2devdisc"
+          containerPort: 10001
+          protocol: UDP
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: 
+            add: 
+            - NET_BIND_SERVICE
+          privileged: false
+          readOnlyRootFilesystem: false
+          runAsGroup: 0
+          runAsUser: 0
+          seLinuxOptions: {}
+        volumeMounts:
+          - name: unifi-persist
+            mountPath: "/config"
+      volumes:
+      - name: unifi-persist
+        persistentVolumeClaim:
+          claimName: unifi-pv-claim
+status: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: "2021-08-12T20:34:00Z"
+  name: unifi-controller-service
+  namespace: security-t-pga
+spec:
+  type: ClusterIP
+  clusterIP: "10.6.128.6"
+  externalName: "unifi.t.pga"
+  ports:
+  - name: "8443-https"
+    port: 8443
+    protocol: TCP
+    targetPort: "unifi-https"
+  - name: "80-http"
+    port: 80
+    protocol: TCP
+    targetPort: "unifi-http"
+  - name: "8080"
+    port: 8080
+    protocol: TCP
+    targetPort: "unifi-dev-com"
+  - name: "3478-stun"
+    port: 3478
+    protocol: UDP
+    targetPort: "unifi-stun"
+  - name: "8843-https-redirect"
+    port: 8843
+    protocol: TCP
+    targetPort: "unifi-https-rdr"
+  - name: "8880-http-redirect"
+    port: 8880
+    protocol: TCP
+    targetPort: "unifi-http-rdr"
+  - name: "6789"
+    port: 6789
+    protocol: TCP
+    targetPort: "unifi-mobsptest"
+  - name: "1900"
+    port: 1900
+    protocol: UDP
+    targetPort: "unifi-l2disc"
+  - name: "10001"
+    port: 10001
+    protocol: UDP
+    targetPort: "unifi-l2devdisc"
+  selector:
+    app: unifi-controller
+status:
+  loadBalancer: {}

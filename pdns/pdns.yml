@@ -1,0 +1,159 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: powerdns-t-pga
+  name: pdns-deployment
+  namespace: security-t-pga
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: powerdns-t-pga
+  template:
+    metadata:
+      labels:
+        app: powerdns-t-pga
+    spec:
+      hostAliases:
+        - ip: "127.0.0.1"
+          hostnames:
+          - "pdns-admin-uwsgi"
+          - "pdns-mariadb"
+          - "pdns"
+      containers:
+      # backend
+      - name: powerdns-backend
+        image: pschiffe/pdns-mysql
+        env:
+        - name: PDNS_gmysql_host
+          value: "pdns-mariadb"
+        - name: PDNS_gmysql_port
+          value: "3306"
+        - name: PDNS_gmysql_password
+          valueFrom: 
+            secretKeyRef:
+              name: pdns-secrets
+              key: pdns_db_password
+        - name: PDNS_master
+          value: "yes"
+        - name: PDNS_api
+          value: "yes"
+        - name: PDNS_api_key
+          valueFrom:
+            secretKeyRef:
+              name: pdns-secrets
+              key: pdns_api_key
+        - name: PDNS_webserver
+          value: "yes"
+        - name: PDNS_webserver_address
+          value: "0.0.0.0"
+        - name: PDNS_webserver_password
+          valueFrom:
+            secretKeyRef:
+              name: pdns-secrets
+              key: pdns_web_server_password
+        - name: PDNS_allow_dnsupdate_from
+          value: "127.0.0.1/32,172.16.0.0/24,10.0.0.0/8"
+        - name: PDNS_webserver_allow_from
+          value: "127.0.0.1/32,172.16.0.0/24,10.0.0.0/8"
+        ports:
+        - name: "dns-udp"
+          containerPort: 53
+          protocol: UDP
+        - name: "dns-tcp"
+          containerPort: 53
+          protocol: TCP
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: 
+            add: 
+            - NET_BIND_SERVICE
+          privileged: false
+          readOnlyRootFilesystem: false
+          seLinuxOptions: {}
+      # database
+      - name: powerdns-mariadb
+        image: mariadb:latest
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: pdns-secrets
+              key: pdns_db_password
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: {}
+          privileged: false
+          readOnlyRootFilesystem: false
+          seLinuxOptions: {}
+        volumeMounts:
+        - mountPath: /var/lib/mysql
+          name: db-persist
+      # frontend
+      - name: powerdns-uwsgi
+        image: pschiffe/pdns-admin-uwsgi:ngoduykhanh
+        env:
+        - name: PDNS_ADMIN_SQLA_DB_HOST
+          value: "'pdns-mariadb'"
+        - name: PDNS_ADMIN_SQLA_DB_PORT
+          value: "'3306'"
+        - name: PDNS_ADMIN_SQLA_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: pdns-secrets
+              key: uwsgi_db_password
+        - name: PDNS_VERSION
+          value: "4.4.0"
+        - name: PDNS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pdns-secrets
+              key: pdns_api_key
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: {}
+          privileged: false
+          readOnlyRootFilesystem: false
+          seLinuxOptions: {}
+      # frontend-webui
+      - name: powerdns-webui
+        image: pschiffe/pdns-admin-static:ngoduykhanh
+        ports:
+        - name: "web-http"
+          containerPort: 80
+          protocol: TCP
+      # volumes
+      volumes:
+      - name: db-persist
+        persistentVolumeClaim:
+          claimName: powerdns-pvc
+status: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: powerdns-service
+  namespace: security-t-pga
+spec:
+  type: ClusterIP
+  clusterIP: "10.6.128.53"
+  externalName: "ns1.t.pga"
+  ports:
+  - name: "http"
+    port: 80
+    protocol: TCP
+    targetPort: "web-http"
+  - name: "53-udp"
+    port: 53
+    protocol: UDP
+    targetPort: "dns-udp"
+  - name: "53-tcp"
+    port: 53
+    protocol: TCP
+    targetPort: "dns-tcp"
+  selector:
+    app: powerdns-t-pga
+status:
+  loadBalancer: {}
